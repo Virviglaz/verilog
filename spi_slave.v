@@ -14,6 +14,7 @@ module SPI_slave(clk, sck, mosi, miso, ssel, byteReceived, receivedData, dataNee
 	output wire dataNeeded;
 	input wire[BITS-1:0] dataToSend;
 
+	reg[BITS-1:0] receivedDataLatch;
 	reg[1:0] sckr;
 	reg[1:0] mosir;
 	reg[BIT_CNT-1:0] bitcnt;
@@ -40,12 +41,14 @@ module SPI_slave(clk, sck, mosi, miso, ssel, byteReceived, receivedData, dataNee
 	always @(posedge clk) begin
 	if(~ssel_active) begin
 		bitcnt <= {BIT_CNT{1'b0}};
-		receivedData <= {BITS{1'b0}};
+		receivedDataLatch <= {BITS{1'b0}};
 	end
 	else if(sck_risingEdge) begin
 		bitcnt <= bitcnt + { {BIT_CNT-1{1'b0}}, 1'b1 };
-		receivedData <= { receivedData[BITS-2:0], mosi_data };
+		receivedDataLatch <= { receivedDataLatch[BITS-2:0], mosi_data };
 	end
+	else
+		receivedData <= receivedDataLatch;
 	end
 	
 	always @(posedge clk)
