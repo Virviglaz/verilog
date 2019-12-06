@@ -1,6 +1,9 @@
 `timescale 1ns / 1ps
 
-module SPI_slave
+module SPI_slave #(
+	parameter BITS = 8,
+	parameter BIT_CNT = 3
+)
 (
 	input wire clk,
 	input wire sck,
@@ -8,17 +11,18 @@ module SPI_slave
 	output wire miso,
 	input wire ssel,
 	output reg byteReceived = 1'b0,
-	output reg[15:0] receivedData = {16{1'b0}},
+	output reg[BITS-1:0] receivedData = {BITS{1'b0}},
 	output wire dataNeeded,
-	input wire[15:0] dataToSend
+	input wire[BITS-1:0] dataToSend
 );
+	wire ssel_active = ~ssel;
 
-	reg[15:0] receivedDataLatch;
+	reg[BITS-1:0] receivedDataLatch;
 	reg[1:0] sckr;
 	reg[1:0] mosir;
-	reg[3:0] bitcnt;
-	reg[15:0] dataToSendBuffer;
-	wire ssel_active = ~ssel;
+	reg[BIT_CNT-1:0] bitcnt;
+	reg[BITS-1:0] dataToSendBuffer;
+
 
 	always @(posedge clk) begin
 	if(~ssel_active)
@@ -39,29 +43,31 @@ module SPI_slave
 	
 	always @(posedge clk) begin
 		if(~ssel_active) begin
-			bitcnt <= {4{1'b0}};
-			receivedDataLatch <= {16{1'b0}};
+			bitcnt <= {BIT_CNT{1'b0}};
+			receivedDataLatch <= {BITS{1'b0}};
 		end
-		else
-			receivedData <= receivedDataLatch;
-		if(sck_risingEdge && ssel_active) begin
-			bitcnt <= bitcnt + { {15{1'b0}}, 1'b1 };
-			receivedDataLatch <= { receivedDataLatch[14:0], mosi_data };
+		else if(sck_risingEdge && ssel_active) begin
+			bitcnt <= bitcnt + { {BIT_CNT-1{1'b0}}, 1'b1 };
+			receivedDataLatch <= { receivedDataLatch[BITS-2:0], mosi_data };
 		end
 	end
 	
 	always @(posedge clk)
-		byteReceived <= ssel_active && sck_risingEdge && (bitcnt == {16{1'b1}});
+	begin
+		byteReceived <= ssel_active && sck_risingEdge && (bitcnt == BITS - 1);
+		if (byteReceived)
+			receivedData <= receivedDataLatch;
+	end
 
 	always @(posedge clk) begin
 		if(~ssel_active)
-			dataToSendBuffer <= {16{1'b0}};
-		else if(bitcnt == {4{1'b0}})
+			dataToSendBuffer <= {BITS{1'b0}};
+		else if(bitcnt == {BIT_CNT{1'b0}})
 			dataToSendBuffer <= dataToSend;
 		else if(sck_fallingEdge)
-			dataToSendBuffer <= { dataToSendBuffer[14:0], 1'b0};
+			dataToSendBuffer <= { dataToSendBuffer[BITS-2:0], 1'b0};
 	end
 	
-	assign dataNeeded = ssel_active && (bitcnt == {4{1'b0}});
-	assign miso = dataToSendBuffer[15];
+	assign dataNeeded = ssel_active && (bitcnt == {BIT_CNT{1'b0}});
+	assign miso = ssel_active ? dataToSendBuffer[BITS-1] : 1'bz;
 endmodule
