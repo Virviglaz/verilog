@@ -1,73 +1,55 @@
 `timescale 1ns / 1ps
 
 module SPI_slave #(
-	parameter BITS = 8,
-	parameter BIT_CNT = 3
+	parameter BITS = 8
 )
 (
 	input wire clk,
 	input wire sck,
 	input wire mosi,
 	output wire miso,
-	input wire ssel,
-	output reg byteReceived = 1'b0,
-	output reg[BITS-1:0] receivedData = {BITS{1'b0}},
-	output wire dataNeeded,
-	input wire[BITS-1:0] dataToSend
+	input wire csn,
+	output reg[BITS-1:0] data_from_master,
+	input wire[BITS-1:0] data_from_slave,
+	output reg ready
 );
-	wire ssel_active = ~ssel;
 
-	reg[BITS-1:0] receivedDataLatch;
-	reg[1:0] sckr;
-	reg[1:0] mosir;
-	reg[BIT_CNT-1:0] bitcnt;
-	reg[BITS-1:0] dataToSendBuffer;
+	reg[1:0] sck_change;
+	reg[1:0] csn_change;
 
+	reg[BITS-1:0] data_from_masterLatch;
+	reg[BITS-1:0] data_from_slaveBuffer;
 
 	always @(posedge clk) begin
-	if(~ssel_active)
-		sckr <= 2'b00;
-	else
-		sckr <= { sckr[0], sck };
+		sck_change <= csn ? 2'b00 : { sck_change[0], sck };
+		csn_change <= { csn_change[0], csn };
 	end
-	wire sck_risingEdge = (sckr == 2'b01);
-	wire sck_fallingEdge = (sckr == 2'b10);
-		
+
+	/* MOSI valid at sck rising (SPI_MODE0) */
+	wire sck_risingEdge = (sck_change == 2'b01);
+	/* MISO set at sck falling (SPI_MODE0) */
+	wire sck_fallingEdge = (sck_change == 2'b10);
+
+	wire chip_enabled = (csn_change == 2'b10);
+	wire chip_disabled = (csn_change == 2'b01);
+
+	assign miso = csn ? 1'bz : data_from_slaveBuffer[BITS-1];
+
 	always @(posedge clk) begin
-		if(~ssel_active)
-			mosir <= 2'b00;
-		else
-			mosir <= { mosir[0], mosi };
-	end
-	wire mosi_data = mosir[1];
-	
-	always @(posedge clk) begin
-		if(~ssel_active) begin
-			bitcnt <= {BIT_CNT{1'b0}};
-			receivedDataLatch <= {BITS{1'b0}};
+		if (chip_enabled) begin
+			data_from_slaveBuffer <= data_from_slave;
+			ready <= 1'b0;
 		end
-		else if(sck_risingEdge && ssel_active) begin
-			bitcnt <= bitcnt + { {BIT_CNT-1{1'b0}}, 1'b1 };
-			receivedDataLatch <= { receivedDataLatch[BITS-2:0], mosi_data };
-		end
-	end
-	
-	always @(posedge clk)
-	begin
-		byteReceived <= ssel_active && sck_risingEdge && (bitcnt == BITS - 1);
-		if (byteReceived)
-			receivedData <= receivedDataLatch;
-	end
 
-	always @(posedge clk) begin
-		if(~ssel_active)
-			dataToSendBuffer <= {BITS{1'b0}};
-		else if(bitcnt == {BIT_CNT{1'b0}})
-			dataToSendBuffer <= dataToSend;
-		else if(sck_fallingEdge)
-			dataToSendBuffer <= { dataToSendBuffer[BITS-2:0], 1'b0};
+		if (chip_disabled) begin
+			data_from_master <= data_from_masterLatch;
+			ready <= 1'b1;
+		end
+
+		if (sck_risingEdge && ~csn)
+			data_from_masterLatch <= { data_from_masterLatch[BITS-2:0], mosi };
+
+		if (sck_fallingEdge && ~csn)
+			data_from_slaveBuffer <= { data_from_slaveBuffer[BITS-2:0], 1'b0};
 	end
-	
-	assign dataNeeded = ssel_active && (bitcnt == {BIT_CNT{1'b0}});
-	assign miso = ssel_active ? dataToSendBuffer[BITS-1] : 1'bz;
 endmodule
