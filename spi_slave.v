@@ -17,8 +17,7 @@ module SPI_slave #(
 	reg[1:0] sck_change;
 	reg[1:0] csn_change;
 
-	reg[BITS-1:0] data_from_masterLatch;
-	reg[BITS-1:0] data_from_slaveBuffer;
+	reg[BITS-1:0] buffer;
 
 	always @(posedge clk) begin
 		sck_change <= csn ? 2'b00 : { sck_change[0], sck };
@@ -33,23 +32,20 @@ module SPI_slave #(
 	wire chip_enabled = (csn_change == 2'b10);
 	wire chip_disabled = (csn_change == 2'b01);
 
-	assign miso = csn ? 1'bz : data_from_slaveBuffer[BITS-1];
+	assign miso = csn ? 1'bz : buffer[BITS-1];
 
 	always @(posedge clk) begin
 		if (chip_enabled) begin
-			data_from_slaveBuffer <= data_from_slave;
+			buffer <= data_from_slave;
 			ready <= 1'b0;
 		end
 
 		if (chip_disabled) begin
-			data_from_master <= data_from_masterLatch;
+			data_from_master <= buffer;
 			ready <= 1'b1;
 		end
 
-		if (sck_risingEdge && ~csn)
-			data_from_masterLatch <= { data_from_masterLatch[BITS-2:0], mosi };
-
-		if (sck_fallingEdge && ~csn)
-			data_from_slaveBuffer <= { data_from_slaveBuffer[BITS-2:0], 1'b0};
+		if (~csn && sck_risingEdge)
+			buffer <= { buffer[BITS-2:0], mosi };
 	end
 endmodule
